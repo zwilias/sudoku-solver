@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "start": "elm-make --output elm.js src/App.elm && node run.js"
+  }
+}
