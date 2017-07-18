@@ -2,34 +2,105 @@ port module App exposing (..)
 
 import Array.Hamt as Array
 import Json.Encode exposing (Value, string)
+import Random.Pcg as Random
+import Sudoku.AltSolver as AltSolver
 import Sudoku.Board as Board exposing (Board(..))
-import Sudoku.Solver as Solver exposing (Solution(..))
+import Sudoku.RandSolver as RandSolver
+import Sudoku.Solution exposing (Solution(..))
+import Sudoku.Solver as Solver
 import Task
 import Time
 
 
-update : Solution -> () -> ( (), Cmd msg )
-update solution _ =
-    () ! [ emitSolution solution ]
+type Msg
+    = Solve String Solution
 
 
-solve : Board -> Cmd Solution
-solve board =
+update : Msg -> () -> ( (), Cmd msg )
+update (Solve solver solution) _ =
+    () ! [ emitSolution solver solution ]
+
+
+solveWithRand : Board -> Cmd Msg
+solveWithRand board =
+    Random.generate (Solve "randomized solver") (RandSolver.solve board)
+
+
+solveWithNaive : Board -> Cmd Msg
+solveWithNaive board =
     Time.now
         |> Task.map
             (\_ ->
                 Solver.solve board
             )
-        |> Task.perform identity
+        |> Task.perform (Solve "naive")
 
 
-main : Program Never () Solution
+solveWithAlt : Board -> Cmd Msg
+solveWithAlt board =
+    Time.now
+        |> Task.map
+            (\_ ->
+                AltSolver.solve board
+            )
+        |> Task.perform (Solve "alt")
+
+
+solve : Board -> Cmd Msg
+solve board =
+    solveWithAlt board
+
+
+main : Program Never () Msg
 main =
+    let
+        board =
+            datBoard
+    in
     Platform.program
-        { init = () ! [ solve boardToSolve, emitBoard boardToSolve ]
+        { init = () ! [ solve board, emitBoard board ]
         , update = update
         , subscriptions = always Sub.none
         }
+
+
+emptyBoard : Board
+emptyBoard =
+    Array.initialize 81 (always Nothing) |> Board
+
+
+datBoard : Board
+datBoard =
+    [ [ Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing ]
+    , [ Just 8, Nothing, Nothing, Just 6, Nothing, Nothing, Nothing, Nothing, Nothing ]
+    , [ Nothing, Nothing, Nothing, Nothing, Just 3, Just 2, Just 9, Just 8, Just 6 ]
+    , [ Nothing, Nothing, Just 7, Nothing, Just 8, Nothing, Just 2, Nothing, Just 1 ]
+    , [ Nothing, Nothing, Nothing, Nothing, Just 2, Nothing, Just 3, Just 4, Nothing ]
+    , [ Just 9, Nothing, Nothing, Just 7, Nothing, Nothing, Just 6, Nothing, Nothing ]
+    , [ Just 1, Nothing, Nothing, Nothing, Nothing, Just 3, Nothing, Nothing, Nothing ]
+    , [ Just 5, Just 9, Nothing, Nothing, Just 7, Nothing, Nothing, Nothing, Nothing ]
+    , [ Nothing, Just 8, Nothing, Just 1, Just 5, Nothing, Nothing, Nothing, Nothing ]
+    ]
+        |> List.concat
+        |> Array.fromList
+        |> Board
+
+
+hardToSolve : Board
+hardToSolve =
+    [ List.repeat 9 Nothing
+    , [ Nothing, Nothing, Nothing, Nothing, Nothing, Just 3, Nothing, Just 8, Just 5 ]
+    , [ Nothing, Nothing, Just 1, Nothing, Just 2, Nothing, Nothing, Nothing, Nothing ]
+    , [ Nothing, Nothing, Nothing, Just 5, Nothing, Just 7, Nothing, Nothing, Nothing ]
+    , [ Nothing, Nothing, Just 4, Nothing, Nothing, Nothing, Just 1, Nothing, Nothing ]
+    , [ Nothing, Just 9, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing ]
+    , [ Just 5, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Just 7, Just 3 ]
+    , [ Nothing, Nothing, Just 2, Nothing, Just 1, Nothing, Nothing, Nothing, Nothing ]
+    , [ Nothing, Nothing, Nothing, Nothing, Just 4, Nothing, Nothing, Nothing, Just 9 ]
+    ]
+        |> List.concat
+        |> Array.fromList
+        |> Board
 
 
 boardToSolve : Board
@@ -75,17 +146,19 @@ emitBoard board =
         |> emit
 
 
-emitSolution : Solution -> Cmd msg
-emitSolution solution =
+emitSolution : String -> Solution -> Cmd msg
+emitSolution solver solution =
     case solution of
         Solved board ->
-            "\n\nSolved!\n\n"
+            "\n\nSolved with "
+                ++ solver
+                ++ "!\n\n"
                 ++ Board.stringify board
                 |> Json.Encode.string
                 |> emit
 
         Failure ->
-            Json.Encode.string "\n\nFailed :()" |> emit
+            Json.Encode.string "\n\nFailed :(" |> emit
 
 
 port emit : Value -> Cmd msg

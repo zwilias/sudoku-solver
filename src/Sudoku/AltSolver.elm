@@ -1,4 +1,4 @@
-module Sudoku.Solver exposing (solve)
+module Sudoku.AltSolver exposing (solve)
 
 import Array.Hamt as Array
 import Set exposing (Set)
@@ -6,8 +6,8 @@ import Sudoku.Board as Board exposing (Board(..), Position)
 import Sudoku.Solution exposing (Solution(..))
 
 
-emptyPositions : Board -> List Position
-emptyPositions (Board board) =
+emptyPositions : Board -> List ( Position, Set Int )
+emptyPositions ((Board board) as b) =
     Array.toIndexedList board
         |> List.filterMap
             (\( idx, val ) ->
@@ -22,8 +22,11 @@ emptyPositions (Board board) =
 
                             col =
                                 idx - (9 * row)
+
+                            pos =
+                                { row = row, col = col }
                         in
-                        Just { row = row, col = col }
+                        Just ( pos, getOptions pos b )
             )
 
 
@@ -43,7 +46,7 @@ verify pos val oldBoard =
         Nothing
 
 
-getOptions : Position -> Board -> List Int
+getOptions : Position -> Board -> Set Int
 getOptions ({ row, col } as pos) board =
     let
         usedOptions : Set Int
@@ -62,40 +65,40 @@ getOptions ({ row, col } as pos) board =
                 |> Set.fromList
     in
     Set.diff range usedOptions
-        |> Set.toList
+
+
+next : Board -> Maybe ( Position, List Int )
+next board =
+    emptyPositions board
+        |> List.sortBy (Tuple.second >> Set.size)
+        |> List.head
+        |> Maybe.map (Tuple.mapSecond Set.toList)
 
 
 solve : Board -> Solution
 solve board =
-    emptyPositions board
-        |> solvePositions board
-
-
-solvePositions : Board -> List Position -> Solution
-solvePositions board positions =
-    case positions of
-        [] ->
+    case next board of
+        Nothing ->
             Solved board
 
-        pos :: xs ->
-            solvePosition pos (getOptions pos board) xs board
+        Just ( pos, options ) ->
+            solvePosition board pos options
 
 
-solvePosition : Position -> List Int -> List Position -> Board -> Solution
-solvePosition pos options rest board =
+solvePosition : Board -> Position -> List Int -> Solution
+solvePosition board pos options =
     case options of
         [] ->
             Failure
 
         x :: xs ->
-            case verify pos x board of
-                Nothing ->
-                    solvePosition pos xs rest board
+            let
+                newBoard =
+                    Board.set pos x board
+            in
+            case solve newBoard of
+                Solved final ->
+                    Solved final
 
-                Just newBoard ->
-                    case solvePositions newBoard rest of
-                        Solved solution ->
-                            Solved solution
-
-                        Failure ->
-                            solvePosition pos xs rest newBoard
+                Failure ->
+                    solvePosition board pos xs
